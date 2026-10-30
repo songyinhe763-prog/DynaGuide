@@ -1,3 +1,4 @@
+import os
 import matplotlib.pyplot as plt 
 import h5py
 import numpy as np 
@@ -9,7 +10,7 @@ import tqdm
 import json 
 from scipy.spatial.transform import Rotation as R
 
-RESULTS_DIR = "/store/real/maxjdu/repos/robotrainer/analysis"
+RESULTS_DIR = os.environ.get("DYNAGUIDE_RESULTS_DIR", "/home/songhe/dynaguide/results/analysis")
 # RESULTS_DIR = "/store/real/maxjdu/repos/robotrainer/paper_figs"
 import cv2 
 
@@ -360,48 +361,68 @@ def calculate_success_rates(name, hdf5_name, target, bounds):
     plt.close()
     return successes / len(data_grp.keys())
 
-names = [
-   "Calvin_PaperPullfigVisual_BasePolicy2"
-]
 
+RESULTS_DIR = os.environ.get("DYNAGUIDE_RESULTS_DIR", "/home/songhe/dynaguide/results/analysis")
+os.makedirs(RESULTS_DIR, exist_ok=True)
+ROOT = os.environ.get("DYNAGUIDE_RUNS_DIR", "/home/songhe/dynaguide/results")
 
+RELEVANT = ["button_on", "button_off", "switch_on", "switch_off", "drawer_open", "drawer_close",
+            "door_left", "door_right", "red_displace", "blue_displace", "pink_displace", "no_behavior"]
+
+def switch_success_rate(hdf5_name, low=0.05):
+    dataset = h5py.File(hdf5_name, "r")
+    g = dataset["data"]
+    ok = 0
+    total = 0
+    for d in g.keys():
+        st = g[d]["obs"]["states"]
+        if len(st.shape) == 3:
+            st = st[:, -1]
+        sw = st[:, 3]
+        total += 1
+        if np.any(sw > low):
+            ok += 1
+    return ok / max(total, 1), total
+
+names = [n for n in os.environ.get("DYNAGUIDE_RUN_NAMES", "BasePolicy,SwitchOnDynaGuide").split(",") if n.strip()]
+
+reports = {}
 for name in names:
-    hdf5_name = f"/store/real/maxjdu/repos/robotrainer/results/outputs/{name}/{name}.hdf5"
-    # hdf5_name = f"/store/real/maxjdu/repos/robotrainer/FINAL_EXPERIMENTS/ArticulatedObjects/{name}/{name}.hdf5"
-    # target = {"switch" : [0.01, 0.1]} # acceptable tolerance 
-    # succ = calculate_success_rates(name, hdf5_name, "switch", [0.01, 0.1])
-    # dist = generate_behavior_distribution(name, hdf5_name)
-    # try:
+    hdf5_name = f"{ROOT}/{name}/{name}.hdf5"
+    if not os.path.exists(hdf5_name):
+        print("SKIP missing:", hdf5_name)
+        continue
     dist = generate_detailed_behavior_distribtuion(name, hdf5_name)
-    print(name, dist)
-    sorted_keys = sorted(dist["demo_labels"].keys(), key = lambda x : int(x.split("_")[-1]))
-    behavior_list = [dist["demo_labels"][k] for k in sorted_keys]
+    reports[name] = dist
+    succ, total = switch_success_rate(hdf5_name)
+    print(f"[{name}] avg_len={dist['Average Length']:.1f} episodes={total} switch_on_success={succ:.3f}")
+    print(f"[{name}] distribution={json.dumps(dist['Full distribution'], indent=2)}")
+    sorted_keys = sorted(dist["demo_labels"].keys(), key=lambda x: int(x.split("_")[-1]))
+    with open(f"{RESULTS_DIR}/traj_labels_{name}.json", "w") as f:
+        json.dump([dist["demo_labels"][k] for k in sorted_keys], f)
+    with open(f"{RESULTS_DIR}/{name}_summary.json", "w") as f:
+        json.dump({"name": name, "hdf5": hdf5_name, "episodes": total,
+                   "switch_on_success_rate": succ,
+                   "average_length": dist["Average Length"],
+                   "distribution": dist["Full distribution"]}, f, indent=2)
 
-    with open(f"traj_labels_{name}.json", "w") as f:
-        json.dump(behavior_list, f)
-        
-    
-    # except:
-    #     print(f"Skipping {hdf5_name}")
-    # succ = calculate_success_rates(name, hdf5_name, "green_light", [0.9, 1.1]) # should only accept on
-    # print(name, succ)
+if len(reports) >= 2:
+    labels = [k for k in RELEVANT]
+    keys = list(reports.keys())
+    x = np.arange(len(labels))
+    width = 0.8 / len(keys)
+    fig, ax = plt.subplots(figsize=(10, 5))
+    for i, k in enumerate(keys):
+        vals = [reports[k]["Full distribution"].get(l, 0) for l in labels]
+        ax.bar(x + i * width - 0.4 + width / 2, vals, width, label=k)
+    ax.set_ylabel("Share of episodes")
+    ax.set_title("Behavior distribution (Immediate Example: SWITCH_ON)")
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, rotation=45, ha="right")
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(f"{RESULTS_DIR}/behavior_distribution_comparison.png", dpi=150)
+    plt.close()
+    print("comparison figure written")
 
-exit()
-# plot success rates for each behavior TODO
-
-names = [
-    "SwitchOnDynaGuide"
-]
-
-
-relevant_behaviors = ["button_on", "button_off", "switch_on", "switch_off", "drawer_open", "drawer_close", "door_left", "door_right",  
-                           "red_displace", "blue_displace", "pink_displace"] #, "no_behavior"] #, "other"]
-
-our_values = list()
-mean_length = list() 
-for i, name in enumerate(names):
-    hdf5_name = f"path_to_experiments/{name}/{name}.hdf5"
-    dist = generate_detailed_behavior_distribtuion(name, hdf5_name, save_data = False)
-    our_values.append(dist["Full distribution"][relevant_behaviors[i]])
-    print(name, dist)
-    mean_length.append(dist["Average Length"])
+print("ANALYSIS_DONE", sorted(os.listdir(RESULTS_DIR)))

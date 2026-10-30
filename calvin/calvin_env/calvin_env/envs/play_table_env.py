@@ -158,10 +158,15 @@ class PlayTableSimEnv(gym.Env):
                 p.configureDebugVisualizer(p.COV_ENABLE_SEGMENTATION_MARK_PREVIEW, 0, physicsClientId=cid)
                 p.configureDebugVisualizer(p.COV_ENABLE_DEPTH_BUFFER_PREVIEW, 0, physicsClientId=cid)
                 p.configureDebugVisualizer(p.COV_ENABLE_RGB_BUFFER_PREVIEW, 0, physicsClientId=cid)
-                egl = pkgutil.get_loader("eglRenderer")
+                try:
+                    egl_file = pkgutil.get_loader("eglRenderer").get_filename()
+                except AttributeError:
+                    import importlib.util as _ilu
+                    _spec = _ilu.find_spec("eglRenderer")
+                    egl_file = _spec.origin if _spec is not None else None
                 log.info("Loading EGL plugin (may segfault on misconfigured systems)...")
-                if egl:
-                    plugin = p.loadPlugin(egl.get_filename(), "_eglRendererPlugin")
+                if egl_file:
+                    plugin = p.loadPlugin(egl_file, "_eglRendererPlugin")
                 else:
                     plugin = p.loadPlugin("eglRendererPlugin")
                 if plugin < 0:

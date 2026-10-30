@@ -1,1 +1,22 @@
 results/
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Runtime data / logs / model weights (large, do not track)
+data/
+logs/
+models/
+
+# Editor / backup artifacts
+*.orig
+*.bak
+*.bak2
+*.swp
+*~
+
+# OS
+.DS_Store
+Thumbs.db

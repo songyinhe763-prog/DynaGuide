@@ -230,15 +230,16 @@ def rollout(policy, env, horizon, video_writer=None, video_skip=5, return_obs=Fa
 
             # break if done or if success
             if done or success:
-                # always capture the last frame 
-                video_img = []
-                for cam_name in camera_names:
-                    img = env.render(mode="rgb_array", height=128 * 5, width=128 * 5, camera_name=cam_name)
-                    video_img.append(img)
-                video_img = np.concatenate(video_img, axis=0) # concatenate horizontally
-                video_img = cv2.resize(video_img, (128 * 5, 128 * 5))
-                video_img = np.concatenate((collage, video_img), axis = 0)
-                video_writer.append_data(video_img)
+                if video_writer is not None:
+                    # always capture the last frame
+                    video_img = []
+                    for cam_name in camera_names:
+                        img = env.render(mode="rgb_array", height=128 * 5, width=128 * 5, camera_name=cam_name)
+                        video_img.append(img)
+                    video_img = np.concatenate(video_img, axis=0) # concatenate horizontally
+                    video_img = cv2.resize(video_img, (128 * 5, 128 * 5))
+                    video_img = np.concatenate((collage, video_img), axis = 0)
+                    video_writer.append_data(video_img)
                 break
 
             # update for next iter
