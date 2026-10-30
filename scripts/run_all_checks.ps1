@@ -1,4 +1,4 @@
-# Reproduce every piece of evidence in this folder.
+﻿# Reproduce every piece of evidence in this folder.
 #
 # Usage (works with Windows PowerShell 5.1 and PowerShell 7):
 #   powershell -ExecutionPolicy Bypass -File "C:\...\\99_repro\run_all_checks.ps1"
@@ -64,7 +64,7 @@ $summary += ("e2e pipeline                   demos={0} policy={1} latent={2} eva
 
 # ---------------------------------------------------------------- 5) figures
 $figLog = Join-Path $root "06_figures\make_figures.log"
-$figCmd = "python scripts\satellite\make_figures.py --out `"$(Join-Path $root '06_figures')`""
+$figCmd = "python scripts\satellite\make_figures.py"
 $c = Run-Logged "figures" $figCmd $figLog
 $summary += ("figures                        exit={0}" -f $c)
 
@@ -77,3 +77,4 @@ Write-Host "=== summary ===" -ForegroundColor Yellow
 $summary | ForEach-Object { Write-Host "  $_" }
 Write-Host ""
 Write-Host "logs: $root" -ForegroundColor Yellow
+

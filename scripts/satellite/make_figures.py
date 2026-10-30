@@ -504,12 +504,12 @@ def fig_pipeline(out: Path) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--out", type=str, default=str(Path("C:/代码修改/运行证据/06_figures")))
+    p.add_argument("--out", type=str, default="", help="default: <repo>/../运行证据/06_figures")
     p.add_argument("--only", type=str, nargs="+", default=[])
     args = p.parse_args()
     style()
     set_seed(0)
-    out = Path(args.out)
+    out = Path(args.out) if args.out else (Path(__file__).resolve().parents[2].parent / "运行证据" / "06_figures")
     out.mkdir(parents=True, exist_ok=True)
     todo = {
         "1": fig_training,
@@ -533,6 +533,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
 
 
 
