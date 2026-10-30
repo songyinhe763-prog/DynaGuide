@@ -251,6 +251,65 @@ Add this after the `noise_pred` is updated by the network and *before* the noise
     ).prev_sample # this gives the mu from the paper 
 ```
 
+# DynaGuide for Flow-Matching Policies (this fork)
+This fork adds the **flow-matching** counterpart of DynaGuide, plus a free-floating
+satellite-disassembly benchmark used for the on-orbit servicing project. Nothing of the
+original DDIM pipeline was removed; both paths coexist.
+
+**What was added**
+
+- `core/flows/` -- linear probability path, rectified-flow loss, FlowPolicy's *consistency*
+  flow matching loss, guided ODE samplers (euler / midpoint / heun) with the `ss` inner
+  refinement loop, a small `ConditionalUnet1D`, an action-chunk flow policy and a
+  normalizer. Dependency free (only `torch`).
+- `core/flow_dynaguide.py` -- **the guidance for velocity-field policies**:
+  `FlowDynaGuide` turns any differentiable energy into a drift correction
+  `Δv = -s·λ(t)·∇_{x_t}J(x̂_1)` with `x̂_1 = x_t + (1-t)·v` (Tweedie / one-euler clean
+  action estimate), plus `GuidanceWeightSpec` for `λ(t)` and a drop-in
+  `calculate_flow_classifier_guidance` for `run_dynaguide.py`.
+- `core/flow_energies.py` -- `LatentMatchEnergy` (DynaGuide's log-sum-exp latent-distance
+  objective, reused verbatim) and `SatellitePhysicsEnergy` (a differentiable,
+  momentum-conserving disassembly energy).
+- `robomimic/robomimic/algo/flow_policy.py` + `config/flow_policy_config.py` +
+  `configs/flow_policy_image_calvin.json` -- the `flow_policy` algorithm inside the
+  robomimic/CALVIN stack, so a CALVIN experiment can be run with `--guidance_type flow`.
+- `core/satellite/` + `scripts/satellite/` -- the satellite-disassembly environment, the
+  scripted expert, the latent dynamics model and the train/eval pipeline.
+- `docs/FLOW_DYNAGUIDE.md` (derivation, API, hyperparameter mapping) and
+  `docs/SATELLITE_DISASSEMBLY.md` (task/model/metrics), `tests/` (CPU unit tests).
+
+**The one-line version of the maths.** `sqrt(1-ᾱ_k)` in DynaGuide's update is the
+Jacobian of the score→epsilon parameterisation. For the linear path `x_t=(1-t)ε+t·a1` the
+equivalent quantity is the marginal noise std `σ_t = 1-t`, and the bounded,
+self-annealing choice used here is `λ(t) = (1-t)²/2`. The energy is evaluated on the
+clean action estimate, never on the noisy chunk. See `docs/FLOW_DYNAGUIDE.md`.
+
+```bash
+# CALVIN with a flow base policy
+python train.py --config configs/flow_policy_image_calvin.json --dataset calvin_d.hdf5 --name flow_base
+python run_dynaguide.py ... --guidance_type flow --flow_weight fp --scale 1.0 --alpha 30 --ss 4
+
+# satellite disassembly (CPU, minutes)
+python scripts/satellite/make_demos.py --tasks payload_box --per_task 90 --tag payload
+python scripts/satellite/train_flow_policy.py --demos data/satellite/demos_payload.npz \
+    --out checkpoints/satellite/flow_policy_payload.pt --steps 3000
+python scripts/satellite/train_latent_dynamics.py --demos data/satellite/demos_payload.npz \
+    --out checkpoints/satellite/latent_payload.pt --steps 2500
+python scripts/satellite/run_flow_dynaguide.py \
+    --policy checkpoints/satellite/flow_policy_payload.pt \
+    --dynamics checkpoints/satellite/latent_payload.pt \
+    --methods base latent physics both reject --episodes 8 --steps 4
+```
+
+Tests (CPU only):
+
+```bash
+python tests/test_flows.py
+python tests/test_flow_dynaguide.py
+python tests/test_satellite_env.py
+python tests/test_robomimic_flow_policy.py
+```
+
 # Cite our paper 
 ```
 @misc{du2025dynaguidesteeringdiffusionpolices,

@@ -113,7 +113,8 @@ def visualize_guidance_process(model, actions_list, obs, target_embeddings, alph
 
 def rollout(policy, env, horizon, video_writer=None, video_skip=5, return_obs=False, camera_names=None,
             classifier_grad = None, reset_state = None, model = None, exp_dir = None, rollout_count = None, good_embeddings = None, bad_embeddings = None,
-            setup_config = None, save_frames = False, goal_dir = None, ss = 4, alpha = 20, initial_positions = None):
+            setup_config = None, save_frames = False, goal_dir = None, ss = 4, alpha = 20, initial_positions = None,
+            guidance_type = "diffusion"):
     """
     This is the main function that runs DynaGuide. Notable arguments:
     - classifier_grad: the dynaguide function returned by calculate_classifier_guidance 
@@ -168,9 +169,9 @@ def rollout(policy, env, horizon, video_writer=None, video_skip=5, return_obs=Fa
             t1 = time.time()
             if goal_dir is not None: # goal conditoning 
                 goal_dict = env.get_goal()
-                act = policy(ob=obs, guidance_function = classifier_grad, goal = goal_dict, guidance_type = "diffusion", ss = ss)
+                act = policy(ob=obs, guidance_function = classifier_grad, goal = goal_dict, guidance_type = guidance_type, ss = ss)
             else:
-                act = policy(ob=obs, guidance_function = classifier_grad, guidance_type = "diffusion", ss = ss) # this is where the guidance happens 
+                act = policy(ob=obs, guidance_function = classifier_grad, guidance_type = guidance_type, ss = ss) # this is where the guidance happens 
 
             t2 = time.time()
 
@@ -337,6 +338,15 @@ def run_trained_agent(args):
     if args.direct_position_guidance:
         classifier_grad, good_embeddings, bad_embeddings = calculate_position_guidance(exp_setup_config["loc_target"], args.scale)
     
+    elif args.guidance_type == "flow":
+        # velocity-field policy: the guidance is a drift correction on the flow ODE and
+        # needs the current flow time (see core/flow_dynaguide.py and docs/FLOW_DYNAGUIDE.md)
+        from core.flow_dynaguide import calculate_flow_classifier_guidance
+        classifier_grad, good_embeddings, bad_embeddings = calculate_flow_classifier_guidance(
+            model, good_dataset = good_dataset, main_camera = MAIN_CAMERA,
+            scale = args.scale, bad_dataset = bad_dataset, alpha = args.alpha,
+            max_examples = args.max_examples, weight_mode = args.flow_weight,
+            mode = "endpoint")
     else:
         classifier_grad, good_embeddings, bad_embeddings = calculate_classifier_guidance(model, good_dataset = good_dataset, main_camera = MAIN_CAMERA, 
                                                         scale = args.scale, bad_dataset = bad_dataset, alpha = args.alpha, max_examples = args.max_examples)
@@ -418,6 +428,7 @@ def run_trained_agent(args):
                 save_frames = args.save_frames,
                 goal_dir = args.goal_dir,
                 ss = args.ss,
+                guidance_type = args.guidance_type,
                 initial_positions = robot_initial_positions
             )
         except KeyboardInterrupt:
@@ -598,6 +609,19 @@ if __name__ == "__main__":
 
         # for seeding before starting rollouts
     parser.add_argument(
+        "--guidance_type",
+        type=str,
+        default="diffusion",
+        choices=["diffusion", "flow"],
+        help="diffusion: DynaGuide on a DDIM policy / flow: flow-matching DynaGuide on a velocity-field policy",
+    )
+    parser.add_argument(
+        "--flow_weight",
+        type=str,
+        default="fp",
+        help="lambda(t) schedule for flow guidance: fp | linear | ddim | const | noise_fraction | power",
+    )
+    parser.add_argument(
         "--scale",
         type=float,
         default=None,
@@ -695,3 +719,4 @@ if __name__ == "__main__":
             f.write(res_str)
             f.close()
         raise e
+
