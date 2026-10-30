@@ -280,6 +280,7 @@ class SatelliteEnv:
         self.base_angvel *= (1.0 - 0.01 * s.dt)  # passive nutation damping (weak)
         self.base_linvel *= (1.0 - 0.01 * s.dt)
         self.max_force = max(self.max_force, contact_force)
+        self.last_force = contact_force  # per-step contact force, used by the trace plots
 
         # ------------------------------------------------- removal / advance ----
         # The task is "remove the requested module": once a module is fully extracted it

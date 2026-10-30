@@ -62,7 +62,13 @@ $c3 = Run-Logged "e2e train latent" "python scripts\satellite\train_latent_dynam
 $c4 = Run-Logged "e2e evaluate" "python scripts\satellite\run_flow_dynaguide.py --policy checkpoints\satellite\${tag}_policy.pt --dynamics checkpoints\satellite\${tag}_latent.pt --methods base latent --tasks payload_box --episodes 2 --steps 4 --out results\satellite\${tag}_eval.json" (Join-Path $root "03_train\e2e_eval.log")
 $summary += ("e2e pipeline                   demos={0} policy={1} latent={2} eval={3}" -f $c1, $c2, $c3, $c4)
 
-# ---------------------------------------------------------------- 5) refresh copies of result json/md
+# ---------------------------------------------------------------- 5) figures
+$figLog = Join-Path $root "06_figures\make_figures.log"
+$figCmd = "python scripts\satellite\make_figures.py --out `"$(Join-Path $root '06_figures')`""
+$c = Run-Logged "figures" $figCmd $figLog
+$summary += ("figures                        exit={0}" -f $c)
+
+# ---------------------------------------------------------------- 6) refresh copies of result json/md
 Copy-Item (Join-Path $repo "results\satellite\*.json") (Join-Path $root "02_eval") -Force -ErrorAction SilentlyContinue
 Copy-Item (Join-Path $repo "results\satellite\*.md")   (Join-Path $root "02_eval") -Force -ErrorAction SilentlyContinue
 

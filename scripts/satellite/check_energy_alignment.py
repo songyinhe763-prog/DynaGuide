@@ -47,6 +47,7 @@ def main() -> None:
     p.add_argument("--grad_steps", type=int, default=3)
     p.add_argument("--lr", type=float, default=0.05)
     p.add_argument("--seed", type=int, default=1000)
+    p.add_argument("--csv", type=str, default="", help="optional path to dump the per-sample rows")
     args = p.parse_args()
     set_seed(0)
     dev = device()
@@ -116,6 +117,14 @@ def main() -> None:
           f"(lower is better, surrogate decrease = {100*(1-mean('energy_after')/max(mean('energy_before'),1e-9)):.1f}%)")
     print(f"mean drift    base={mean('drift_base'):.4f} guided={mean('drift_guided'):.4f}  improved in {better_drift}/{len(rows)}")
     print(f"mean force    base={mean('force_base'):.3f} guided={mean('force_guided'):.3f}  improved in {better_force}/{len(rows)}")
+    if args.csv:
+        import csv
+
+        with open(args.csv, "w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            writer.writeheader()
+            writer.writerows(rows)
+        print(f"per-sample rows -> {args.csv}")
 
 
 if __name__ == "__main__":
