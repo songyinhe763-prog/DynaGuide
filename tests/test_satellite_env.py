@@ -118,7 +118,36 @@ def test_collect_demonstrations_shapes():
     assert data["obs"].shape[0] == data["actions"].shape[0] == data["task_id"].shape[0]
     assert data["obs"].shape[1] == proprio_dim(3)
     assert data["actions"].shape[1] == 7
-    assert data["success_rate"] > 0.5, data["success_rate"]
+    assert "behavior" in data and "ep_ok" in data
+
+
+def test_safe_only_demonstrations_are_reliable():
+    """With a single (safe) strategy the expert must nearly always succeed."""
+    data = collect_demonstrations(
+        num_episodes=6,
+        tasks_per_episode=("payload_box",),
+        seed=8,
+        noise=0.02,
+        behavior_mix={"safe": 1.0},
+    )
+    assert data["success_rate"] > 0.8, data["success_rate"]
+    assert data["constraint_rate"] > 0.8, data["constraint_rate"]
+
+
+def test_unsafe_behaviours_are_captured_by_the_metrics():
+    """The impatient strategy must be less safe than the safe one (momentum reaction)."""
+    safe = collect_demonstrations(
+        num_episodes=5, tasks_per_episode=("payload_box",), seed=9, noise=0.0, behavior_mix={"safe": 1.0}
+    )
+    impatient = collect_demonstrations(
+        num_episodes=5, tasks_per_episode=("payload_box",), seed=9, noise=0.0, behavior_mix={"impatient": 1.0}
+    )
+    drift_safe = np.mean([i["attitude_drift"] for i in safe["infos"]])
+    drift_impatient = np.mean([i["attitude_drift"] for i in impatient["infos"]])
+    force_safe = np.mean([i["max_force"] for i in safe["infos"]])
+    force_impatient = np.mean([i["max_force"] for i in impatient["infos"]])
+    assert drift_impatient > drift_safe, (drift_safe, drift_impatient)
+    assert force_impatient > force_safe, (force_safe, force_impatient)
 
 
 if __name__ == "__main__":
