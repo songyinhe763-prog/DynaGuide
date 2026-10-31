@@ -1,4 +1,4 @@
-﻿"""Generate the figures of the flow-DynaGuide satellite experiments.
+"""Generate the figures of the flow-DynaGuide satellite experiments.
 
 All numbers are read from the artefacts of real runs (``results/satellite/*.json``,
 ``checkpoints/satellite/*.json``, ``04_diag/energy_alignment.csv``) or produced by a fresh
@@ -57,6 +57,8 @@ COLORS = {
     "gray": "#6B7280",
     "light": "#DCE6F7",
 }
+STRIP_TITLE = False  # --strip-title: drop the embedded "图 N" titles (for Word reports)
+
 METHOD_COLOR = {
     "base": COLORS["gray"],
     "latent": COLORS["blue"],
@@ -98,6 +100,21 @@ def style() -> None:
     )
 
 
+def strip_titles(fig) -> None:
+    """Remove the embedded figure titles when a report variant is requested."""
+    if not STRIP_TITLE:
+        return
+    for ax in fig.axes:
+        for t in list(ax.texts):
+            if t.get_text().startswith("图 "):
+                t.remove()
+        if ax.get_title().startswith("图 "):
+            ax.set_title("")
+    for t in list(fig.texts):
+        if t.get_text().startswith("图 "):
+            t.remove()
+
+
 def load(path: Path):
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
@@ -129,6 +146,7 @@ def fig_training(out: Path) -> None:
     ax.set_title(f"潜空间动力学模型训练（{lat['steps']} 步）")
     ax.legend(loc="upper right")
     fig.suptitle("图 1  两个网络的训练曲线（CPU，单机）", fontsize=13, fontweight="bold", y=1.02)
+    strip_titles(fig)
     fig.savefig(out / "fig1_training.png")
     plt.close(fig)
 
@@ -166,6 +184,7 @@ def fig_main(out: Path) -> None:
     axes[0].legend(loc="upper right", ncol=1)
     fig.suptitle("图 2  各引导方法的成功率（同一组回合种子；深色=拆下，浅色斜纹=同时满足安全预算）",
                  fontsize=12.5, fontweight="bold", y=1.03)
+    strip_titles(fig)
     fig.savefig(out / "fig2_main_results.png")
     plt.close(fig)
 
@@ -195,6 +214,7 @@ def fig_sweep(out: Path) -> None:
     axes[0].set_ylabel("百分比 [%]")
     fig.suptitle("图 3  引导强度扫描：过强会破坏任务执行（每点 6 回合，λ(t)=(1−t)²/2）",
                  fontsize=12.5, fontweight="bold", y=1.04)
+    strip_titles(fig)
     fig.savefig(out / "fig3_scale_sweep.png")
     plt.close(fig)
 
@@ -243,6 +263,7 @@ def fig_alignment(out: Path, csv_path: Path) -> None:
     ax.legend(loc="upper right")
     fig.suptitle("图 4  逐块检验：沿引导能量改进动作块后，在真实仿真中重放（每点一个动作块）",
                  fontsize=12.5, fontweight="bold", y=1.04)
+    strip_titles(fig)
     fig.savefig(out / "fig4_alignment.png")
     plt.close(fig)
 
@@ -314,6 +335,7 @@ def fig_env(out: Path) -> None:
     ax.set_xlabel("基座系 x [m]")
     ax.set_ylabel("基座系 y [m]")
     ax.set_title("图 5  自由漂浮卫星拆解基准（俯视）：三模块、三种紧固方式、基座反作用", fontsize=11.5)
+    strip_titles(fig)
     fig.savefig(out / "fig5_env_schematic.png")
     plt.close(fig)
 
@@ -433,6 +455,7 @@ def fig_trace(out: Path) -> None:
 
     fig.suptitle(f"图 6  示例回合（seed={seed}，{note}）逐步对照：漂移/接触力/协议进度（统计见 图2、图4）",
                  fontsize=12.5, fontweight="bold", y=1.04)
+    strip_titles(fig)
     fig.savefig(out / "fig6_episode_trace.png")
     plt.close(fig)
 
@@ -498,24 +521,40 @@ def fig_pipeline(out: Path) -> None:
             fontsize=9.2, fontweight="bold", color=COLORS["purple"])
 
     ax.set_title("图 7  方法框架：流匹配策略 + 主动动态引导 + 自由漂浮拆解仿真", fontsize=12.5, fontweight="bold")
+    strip_titles(fig)
     fig.savefig(out / "fig7_pipeline.png")
     plt.close(fig)
+
+
+def evidence_root(out: Path) -> Path:
+    """Walk up until the ``06_figures`` component and return the evidence root."""
+    p = out
+    while p.name:
+        if p.name == "06_figures":
+            return p.parent
+        p = p.parent
+    return out.parent
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--out", type=str, default="", help="default: <repo>/../运行证据/06_figures")
     p.add_argument("--only", type=str, nargs="+", default=[])
+    p.add_argument("--strip-title", action="store_true", default=False,
+                   help="remove the embedded figure titles (for Word reports)")
     args = p.parse_args()
+    global STRIP_TITLE
+    STRIP_TITLE = bool(args.strip_title)
     style()
     set_seed(0)
     out = Path(args.out) if args.out else (Path(__file__).resolve().parents[2].parent / "运行证据" / "06_figures")
     out.mkdir(parents=True, exist_ok=True)
+    diag_csv = evidence_root(out) / "04_diag" / "energy_alignment.csv"
     todo = {
         "1": fig_training,
         "2": fig_main,
         "3": fig_sweep,
-        "4": lambda o: fig_alignment(o, Path(str(o).replace("06_figures", "04_diag")) / "energy_alignment.csv"),
+        "4": lambda o: fig_alignment(o, diag_csv),
         "5": fig_env,
         "6": fig_trace,
         "7": fig_pipeline,
