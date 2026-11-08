@@ -72,7 +72,7 @@ class GuidanceWeightSpec:
     clamp_max: Optional[float] = 50.0
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        # 一张图讲清 λ(t) 的取舍
+        # λ(t) 的四种调度与两端行为
         #   fp     = (1-t)²/2  默认：有界 + 自退火（从 Fokker-Planck 漂移推来）
         #   linear = (1-t)     只看一阶
         #   ddim   = (1-t)/t   严格照搬 DDIM 的 ε 参数化，t→0 会发散，故必须裁剪（默认 50）
