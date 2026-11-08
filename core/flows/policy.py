@@ -1,15 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# ★ 讲解要点（本文件 = 被引导的“基础策略”本体）
-#   结构很简单，讲的时候按三块走：
-#     ① encode(观测窗口)  → 观测嵌入（相当于 Diffusion Policy 的条件向量）
-#     ② velocity(带噪动作, t, 条件) → 速度场 v_θ，这是网络唯一的输出
-#     ③ sample() 调 FlowSampler 积分出动作块，引导以参数形式传进去
-#   关键设计：
-#     · 策略本身对“要拆哪个模块、用什么手法”一无所知（无条件），
-#       所以它会学成三种示范的平均 —— 这正是需要推理期引导的原因；
-#     · 动作在训练前归一化到 [-1,1]（LinearNormalizer），
-#       采样后再反归一化，仿真里看到的是真实尺度。
-# ═══════════════════════════════════════════════════════════════════════════
 """A standalone flow-matching action-chunk policy (the "base policy" of the pipeline).
 
 The policy maps an observation window to a *velocity field* over action chunks and is

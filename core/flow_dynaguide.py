@@ -1,24 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# ★ 讲解要点（本文件是这次改造的“主菜”，讲 3 分钟就讲这三件事）
-#
-#   ① 为什么不能直接搬 DynaGuide 那行补丁？
-#      DynaGuide 改的是噪声预测：noise_pred -= √(1-ᾱ_k) · grad
-#      那个 √(1-ᾱ_k) 不是经验系数，是“score → ε 参数化”的雅可比因子
-#      （∇log q = -ε/√(1-ᾱ)），它顺带把引导做成自动退火：噪声大时给满、接近干净时关掉。
-#      流匹配里对应的量是边际噪声标准差 σ_t = 1-t，所以照搬会量纲不对。
-#
-#   ② 换到速度场上应该加什么？
-#      v̂(x_t,t) = v_θ(x_t,t) - s·λ(t)·∇J(x̂₁)
-#      权重 λ(t) 取 (1-t)²/2：t→1 自动关断（和 DDIM 同构），t→0 有界（单步推理不炸）。
-#      严格照搬 DDIM 会得到 (1-t)/t，在 t→0 发散 —— 这就是“照搬会炸”的根因。
-#
-#   ③ 梯度在哪一点求？
-#      在 x̂₁ = x_t + (1-t)·v_θ（干净动作估计，也就是 FlowPolicy 的 f_θ）上求，
-#      不是在带噪的 x_t 上求：动力学模型/物理能量只见过干净动作，带噪点属于分布外。
-#
-#   代码里三件事分别落在：GuidanceWeightSpec（λ(t)）、FlowDynaGuide.__call__（求梯度+注入）、
-#   _postprocess（梯度护栏）。其余（log-sum-exp 正负条件、温度 σ、重复次数 M）与 DynaGuide 完全一致。
-# ═══════════════════════════════════════════════════════════════════════════
 """DynaGuide for velocity-field (flow-matching) policies.
 
 The original DynaGuide steers a *DDIM noise prediction*:
@@ -93,7 +72,7 @@ class GuidanceWeightSpec:
     clamp_max: Optional[float] = 50.0
 
     def __call__(self, t: torch.Tensor) -> torch.Tensor:
-        # ★ 讲解点：一张图讲清 λ(t) 的取舍
+        # 一张图讲清 λ(t) 的取舍
         #   fp     = (1-t)²/2  默认：有界 + 自退火（从 Fokker-Planck 漂移推来）
         #   linear = (1-t)     只看一阶
         #   ddim   = (1-t)/t   严格照搬 DDIM 的 ε 参数化，t→0 会发散，故必须裁剪（默认 50）
@@ -167,9 +146,9 @@ class FlowDynaGuide:
         return x_t + (1.0 - t_e) * v
 
     def _postprocess(self, g: torch.Tensor) -> torch.Tensor:
-        """★ 讲解点：三道梯度护栏。引导强度极其敏感（文献里都要逐值扫），
+        """三道梯度护栏。引导强度极其敏感（文献里都要逐值扫），
         不加护栏很容易一步把动作打飞：按范数裁剪（默认 5）、逐元素裁剪（默认关）、
-        跨步骤动量平滑（默认关）。答辩常被问“为什么怕大梯度”，答案就在这里。
+        跨步骤动量平滑（默认关）。
         """
         if self.clip_value is not None:
             g = g.clamp(-self.clip_value, self.clip_value)
@@ -199,7 +178,7 @@ class FlowDynaGuide:
         ctx = dict(ctx or {})
         if not x.requires_grad:
             x = x.detach().requires_grad_(True)
-        # ★ 讲解点：先把“带噪动作”投影成“干净动作估计”，能量永远作用在后者上。
+        # 先把“带噪动作”投影成“干净动作估计”，能量永远作用在后者上。
         #   mode="endpoint"：Tweedie 投影（默认，推荐）
         #   mode="velocity"：DynaGuide 论文的字面移植（直接在带噪块上算），仅作消融
         if self.mode == "endpoint":
@@ -216,7 +195,7 @@ class FlowDynaGuide:
         grad = self._postprocess(grad)
 
         w = self.weight(t).reshape(-1, *([1] * (grad.dim() - 1))).to(grad.dtype)
-        # ★ 讲解点：这一行就是 DynaGuide 那行补丁在流匹配里的对应式
+        # 这一行就是 DynaGuide 那行补丁在流匹配里的对应式
         #   DDIM：noise_pred -= √(1-ᾱ_k) · s · grad
         #   这里：Δv         -= λ(t)       · s · grad
         #   负号 = 沿能量下降方向走；λ(t) 承担了 √(1-ᾱ_k) 的退火作用。

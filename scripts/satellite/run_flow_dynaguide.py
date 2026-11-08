@@ -1,19 +1,3 @@
-# ═══════════════════════════════════════════════════════════════════════════
-# ★ 讲解要点（本文件 = 实验怎么跑、表是怎么出来的）
-#   一次评测 = 对每个方法 × 每个模块 × 若干回合：
-#     1) reset 环境（同一组回合种子，保证各方法可比）
-#     2) 每 n_action_steps 步重新规划一次：
-#          最近两帧观测 → 策略采样动作块（可选带引导）→ 只执行前 8 步
-#        这是 MPC/滚动时域的标准做法，DynaGuide 原文也是“开环执行 14 步再问策略”。
-#     3) 记录 success / constraint_satisfied / 基座漂移 / 接触力
-#   方法有五种，讲的时候按这个顺序：
-#     base    完全不引导（下限参考）
-#     latent  只用 DynaGuide 的潜空间能量
-#     physics 只用可微物理能量
-#     both    两者加权相加
-#     reject  采 16 条取能量最低（best-of-N，无梯度；能量缺进度项时是已知缺陷）
-#   命令行里 --per_method_scale 是因为不同能量的量纲不同，必须分开给强度。
-# ═══════════════════════════════════════════════════════════════════════════
 """Evaluate the flow policy with and without DynaGuide guidance on the satellite task.
 
 Methods
@@ -90,7 +74,7 @@ def load_dynamics(path: str, dev: str):
 
 # ---------------------------------------------------------------- energy ----
 def build_energy(method: str, spec, dynamics, banks, negatives, task_name: str, alpha: float):
-    """★ 讲解点：方法名 → 能量对象的映射，全实验的“开关”就在这里。
+    """方法名 → 能量对象的映射，全实验的“开关”就在这里。
     正样本取“安全回合的末端状态”，负样本取“违约回合的末端状态”（预处理时已建库）。
     """
     terms = []
