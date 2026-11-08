@@ -1,3 +1,16 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 怎么训练速度场）
+#   1) 默认目标 rectified_flow_loss：最朴素的“回归真速度”
+#        L = E|| v_θ(x_t,t) - (a₁ - ε) ||²
+#      一句话：给定 (带噪动作, 时刻)，网络要说出从噪声指向数据的那个向量。
+#   2) 另一个目标 ConsistencyFlowMatcher 是 FlowPolicy(AAAI'25) 的“一致性流匹配”：
+#      把 [0,1] 切成 num_segments 段，要求网络能把段内任意点一步外推到段终点
+#        f_θ(x_t,t) = x_t + (段终点 - t)·v_θ
+#      并且段内任意两点的速度一致 → 于是少步（甚至一步）就能出动作。
+#      论文 Eq.4/5 是连续形式，这里的实现按官方参考实现落成离散形式：
+#        delta=1e-2（时间间隔）、boundary（贴近段终点时改用解析插值）、alpha=1e-5（速度项权重）。
+#   3) 讲的时候可以强调：两个目标只影响“怎么训”，引导只动“怎么采样”，两者解耦。
+# ═══════════════════════════════════════════════════════════════════════════
 """Training objectives for flow-based action-chunk policies.
 
 Two objectives are provided:
@@ -108,6 +121,8 @@ class ConsistencyFlowMatcher:
     path: LinearFlowPath = field(default_factory=LinearFlowPath)
 
     # ------------------------------------------------------------------ ops ----
+    # ★ 讲解点：这个“段终点外推”就是 FlowPolicy 论文里的 f_θ^i，
+    #   也是我们引导时用的“干净动作估计”的同一个算子（段终点取 1 时两者完全一致）。
     @staticmethod
     def f_euler(
         t_expand: torch.Tensor,

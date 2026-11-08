@@ -1,3 +1,16 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 流匹配的“坐标系”）
+#   1) 流匹配把“加噪”写成一条直线插值：x_t = (1-t)·ε + t·a₁
+#      t=0 是纯噪声，t=1 是动作数据；沿这条直线速度恒为 u = a₁ - ε。
+#   2) 只要知道 (x_t, t, v)，就能还原两端：
+#        干净动作  x̂₁ = x_t + (1-t)·v     ← 后面引导就在这个点上求梯度
+#        源噪声    x̂₀ = x_t - t·v
+#      这不是新公式，就是线性插值的代数，两个方法是互逆的（有单元测试验证）。
+#   3) 为什么关心 σ_t = 1-t：DDIM 的 √(1-ᾱ_k) 在流匹配里的“同位物”就是它，
+#      引导权重 λ(t) 就是从 σ_t 推出来的（见 core/flow_dynaguide.py）。
+#
+#   一句话总结：这个文件只做三件事——定义路径、定义速度、定义两端投影。
+# ═══════════════════════════════════════════════════════════════════════════
 """Probability paths for (conditional) flow matching.
 
 We follow the convention used by FlowPolicy / the ``consistency_flow_matching`` repo,
@@ -123,6 +136,10 @@ class LinearFlowPath:
         return x1 - x0
 
     # ------------------------------------------------------- projections ----
+    # ★ 讲解点：这两个投影是整条链路的枢纽。
+    #   project_onto_data 给出“网络认为最终要执行的动作块”，
+    #   引导能量、动力学模型、物理约束全部作用在它上面；
+    #   而不是作用在带噪的 x_t 上（那样是分布外查询，梯度会有偏）。
     def project_onto_data(self, x_t: torch.Tensor, t: torch.Tensor, v: torch.Tensor) -> torch.Tensor:
         """``x1_hat = x_t + (1 - t) v`` -- the clean action chunk implied by ``v``."""
         t = pad_t_like_x(t, x_t)

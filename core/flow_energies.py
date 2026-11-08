@@ -1,4 +1,22 @@
-﻿"""Guidance energies (differentiable cost functions) used by the flow DynaGuide.
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 引导到底“想优化什么”）
+#   两条能量，都写成“标量代价、越小越好”，于是引导方向统一是 -∇J：
+#
+#   ① LatentMatchEnergy —— 完全沿用 DynaGuide 的思路
+#        J = logΣexp(-d⁺/σ) - logΣexp(-d⁻/σ),  d = 潜空间欧氏距离
+#      log-sum-exp 是“软最小值”：多个正目标时自动挑当前最可达的那个，
+#      而不是被所有目标平均；正负相减即论文的“概率相除再取 log”。
+#      对应的模型是潜空间动力学 h_θ：输入 (当前状态, 动作块) → 预测末端潜状态。
+#
+#   ② SatellitePhysicsEnergy —— 本次为大创课题新增的“物理先验”
+#      不用学，直接对一个可微分的拆解代理模型打分，考核 6 项：
+#        协议进度（拧够了没有）、过早拉拽（白费力气还会推转基座）、
+#        接触力超预算、基座姿态漂移（动量反作用）、轴向偏差、是否对着正确模块。
+#      关键是它对动作块可微，所以能像①一样给出梯度 —— “把物理约束变成可求导的能量”。
+#
+#   答辩时可强调：①解决“要拆成什么样”，②解决“拆的时候别把卫星推飞”，两者可加权组合。
+# ═══════════════════════════════════════════════════════════════════════════
+"""Guidance energies (differentiable cost functions) used by the flow DynaGuide.
 
 Two families live here:
 
@@ -196,6 +214,9 @@ class DifferentiableDisassemblyModel:
             impulse = impulse + force * spec.dt
 
             # reaction wrench on the free-floating base (Newton's third law)
+            # ★ 讲解点：这里就是“微重力”与地面任务的根本区别——
+            #   拧/拔产生的力矩不会消失，而是以反作用力偶加回自由漂浮基座，
+            #   累积成姿态漂移；漂移超预算就判“拆下来了但不安全”。
             direction = (dp[t] / dp[t].norm().clamp(min=1e-6)) * force
             f_world = R @ direction
             torque = torch.cross(R @ attach, -f_world, dim=0)

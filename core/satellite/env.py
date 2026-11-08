@@ -1,3 +1,20 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 拆解仿真，讲“为什么这个任务比地面难”）
+#   1) 准静态阻抗模型：动作是“末端位移意图”dp，只有被卡住的那部分才产生接触力
+#        F = k_imp · |dp_blocked|
+#      于是“拧到位再拉”几乎不产生力，“没拧就拉/斜着拉”立刻产生大力和力矩。
+#   2) 关键物理：力按牛顿第三定律反作用到自由漂浮基座
+#        ω += (r × (−F))·dt / I ,  姿态按四元数积分
+#      这就是微重力拆解的核心难点：拆得越猛，卫星转得越多。
+#   3) 三种紧固件对应三种协议，这是“多模态示范”的来源：
+#        螺栓 bolt：转够 required_twist 才能拉；  卡扣 latch：先压入再拉；  销 peg：直接拉过破断力
+#   4) 判定分两档，讲的时候一定要说清：
+#        success              = 模块被拆下
+#        constraint_satisfied = 拆下 且 基座漂移 ≤ 0.12 rad 且 接触力 ≤ 4 N（运行预算）
+#      在轨语境下，“成功但把卫星推飞”必须算失败，这是本仿真的意义。
+#   5) 观测是 36 维本体感知（基座位姿/速度、末端位姿、夹爪、每模块连接状态与进度、时间），
+#      每个模块占 5 维，布局见文件顶部的 proprio 切片常量。
+# ═══════════════════════════════════════════════════════════════════════════
 """Free-floating satellite disassembly environment.
 
 Design goals
@@ -222,6 +239,10 @@ class SatelliteEnv:
             dp_tan = dp - dp_ax
 
             if not self.detached[i]:
+                # ★ 讲解点：紧固件状态机 —— 这是“怎么拆”的全部规则
+                #   螺栓：只有绕轴的正向转动才算拧（twist 累积），拧够才解锁；
+                #   卡扣：只有沿轴向内压才算（press 累积），压够才解锁；
+                #   销：  无需准备动作，直接看拉力是否超过破断力。
                 if j.kind == "bolt" and self.twist[i] < j.required_twist:
                     self.twist[i] += max(0.0, float(np.dot(dth, axis)))
                 if j.kind == "latch" and self.press[i] < j.press_depth:
@@ -259,6 +280,9 @@ class SatelliteEnv:
             contact_force = float(np.linalg.norm(blocked) * s.k_imp)
 
             if contact_force > 1e-9:
+                # ★ 讲解点：反作用力偶。力矩 = r × (−F)，r 是基座质心到安装点的矢量。
+                #   基座惯量只有 0.6 kg·m² 量级，一次几牛的偏载就足以让姿态明显漂移，
+                #   所以“温柔地拆”不是风格问题，而是能不能完成任务的问题。
                 direction = blocked / max(float(np.linalg.norm(blocked)), 1e-12)
                 rot = m3.quat_matrix(self.base_quat)
                 f_world = rot @ (direction * contact_force)

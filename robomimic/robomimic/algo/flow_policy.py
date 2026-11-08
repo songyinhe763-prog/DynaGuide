@@ -1,3 +1,18 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 把改造接回 robomimic/CALVIN 生态，证明“通用”而不是“只在自己玩具环境能跑”）
+#   1) 与 diffusion_policy.py 的差异只有三处：
+#        网络输出：噪声 ε  →  速度 v
+#        训练目标：MSE(ε̂, ε) → rectified flow 或一致性流匹配
+#        推理：DDIM 调度器  →  FlowSampler（ODE 积分）
+#      其余（观测编码器、EMA、动作块、序列化）完全复用，所以外部看就是一个普通 robomimic 算法。
+#   2) get_action(..., guidance_type="flow") 是给 run_dynaguide.py 用的接口；
+#      里面的 _wrap_guidance 做了签名适配，兼容两种引导回调：
+#        4 参数 (state, actions, t, velocity) —— 流匹配版，需要当前时刻
+#        2 参数 (state, actions)              —— DynaGuide 原版的字面移植
+#      这样原来写好的引导函数不用改就能挂上来。
+#   3) 讲的时候可以顺带说清边界：这条通路本次只做了 CPU 合成观测的集成测试，
+#      还没在真实 CALVIN 数据集上跑完整评测（需要数据集 + GPU）。
+# ═══════════════════════════════════════════════════════════════════════════
 """Flow-matching (rectified flow / consistency flow matching) policy for robomimic.
 
 This is the *flow* sibling of ``robomimic/algo/diffusion_policy.py`` and is what makes
@@ -230,7 +245,12 @@ class FlowPolicyUNet(PolicyAlgo):
         return fn
 
     def _wrap_guidance(self, guidance_function, state):
-        """Adapt either the flow (4-arg) or the DDIM-style (2-arg) guidance signature."""
+        """Adapt either the flow (4-arg) or the DDIM-style (2-arg) guidance signature.
+
+        ★ 讲解点：这是“向后兼容”的关键小函数。原 DynaGuide 的引导函数签名是
+        (state, actions)，流匹配版多一个当前时刻 t 和当前速度 v；这里按参数个数分派，
+        于是两代实现都能直接挂到同一个策略上。
+        """
         try:
             n_params = len(
                 [p for p in inspect.signature(guidance_function).parameters.values() if p.kind != p.VAR_KEYWORD]

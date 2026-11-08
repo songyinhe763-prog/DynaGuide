@@ -1,3 +1,18 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = DynaGuide 的“动力学模型 h_θ”，本任务版）
+#   原版：φ = 冻结的 DINOv2 patch 编码（256×384），h_θ = 6 层 Transformer，
+#         输入 (当前图, 动作块) → 预测 t+H 时刻的潜状态。
+#   这里：本仿真没有相机，所以 φ 换成“冻结的语义编码”（22→14 维：姿态、角速度、
+#         末端位置、夹爪、每模块的 4 个进度量），h_θ 换成 3 层 MLP。
+#         结构完全同构：冻结编码 + 回归未来潜状态 + 高斯潜空间假设。
+#   两个必须讲到的实现细节：
+#     ① 每维用“固定名义尺度”标准化，而不是用经验标准差——
+#        因为 attached 这类二值特征标准差接近 0，用它做分母会把潜空间尺度炸掉；
+#     ② 训练时按 50% 概率给动作块加“插值噪声”a_t=(1-t)ε+t·a₁，
+#        与采样器的噪声分布一致。这是 DynaGuide 论文明确做过消融的关键项：
+#        不做噪声增广，引导能力会明显下降。
+#   用法：state_embedding(s) 给 goal bank 打嵌入；state_action_embedding(s,a) 给引导打分。
+# ═══════════════════════════════════════════════════════════════════════════
 """Latent dynamics model for guidance on the satellite task.
 
 DynaGuide's dynamics model ``h_theta`` maps ``(phi(o_t), a) -> phi(o_{t+H})`` where ``phi``
@@ -167,7 +182,12 @@ class SemanticDynamicsModel(nn.Module):
 
     # ---------------------------------------------------------- augmentation ----
     def augment_actions(self, actions: torch.Tensor, generator: Optional[torch.Generator] = None) -> torch.Tensor:
-        """Add interpolant noise ``a_t = (1-t) eps + t a`` to a fraction of the batch."""
+        """Add interpolant noise ``a_t = (1-t) eps + t a`` to a fraction of the batch.
+
+        ★ 讲解点：DynaGuide 论文 Fig.9 的消融项。引导时会拿“还没去噪完的动作块”
+        来问 h_θ，所以训练必须见过这种输入；这里用与采样器完全相同的插值路径加噪，
+        比另造高斯噪声更贴合推理时的分布。
+        """
         if not self.noise_augment:
             return actions
         B = actions.shape[0]

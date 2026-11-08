@@ -1,3 +1,16 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# ★ 讲解要点（本文件 = 推理时怎么把动作“积”出来，引导插在哪里）
+#   1) 推理就是解一个常微分方程：dx/dt = v_θ(x, t)，从 t≈0（噪声）积到 t=1（动作）。
+#      每一步只是 x ← x + v·dt，euler 一阶，midpoint/heun 是二阶（更准）。
+#   2) 引导只改“漂移项”：
+#        dx/dt = v_θ(x,t) + Δv,   Δv = -s·λ(t)·∇J(x̂₁)
+#      也就是在每次算速度的时候多加一项，不改策略权重、不改训练。
+#      对应 DynaGuide 原来那一行：noise_pred -= √(1-ᾱ)·grad。
+#   3) ss（论文里的 M）：同一个宏步里多迭代几次再前进，让引导把方向“磨准”，
+#      对应 DynaGuide Algorithm 1 的内层循环。ss=1 就是普通引导。
+#   4) 为什么这里要 x.requires_grad_(True)：Δv 需要对当前样本求梯度；
+#      每步算完立刻 detach，避免计算图越积越大。
+# ═══════════════════════════════════════════════════════════════════════════
 """ODE samplers for flow policies, with a first-class guidance hook.
 
 The samplers integrate the probability-flow ODE
@@ -218,7 +231,14 @@ class FlowSampler:
         return torch.full((x.shape[0],), float(t_cur), device=x.device, dtype=x.dtype)
 
     def _guided_velocity(self, velocity_fn, x, t_cur, cond, guidance, ctx):
-        """Evaluate ``v`` and the guidance correction at time ``t_cur``."""
+        """Evaluate ``v`` and the guidance correction at time ``t_cur``.
+
+        ★ 讲解点：整个引导的“注入点”就是这里，只有 4 步：
+          ① 需要梯度时把当前样本设为可求导；
+          ② 网络给出原速度 v；
+          ③ 引导函数返回 Δv（内部是“能量对干净动作求梯度再换回速度”）；
+          ④ 两者相加 → 交给上面积分。
+        """
         t_vec = self._batch_time(t_cur, x)
         x_in = x if guidance is None else x.detach().requires_grad_(True)
         v = velocity_fn(x_in, t_vec * self.config.time_scale, cond)
